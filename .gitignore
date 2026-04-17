@@ -1,0 +1,37 @@
+# Claude
+.claude
+
+# Node
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# YOLO model weights (large binary files)
+*.pt
+*.onnx
+
+# Build output
+build/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/
