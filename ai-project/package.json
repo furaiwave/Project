@@ -33,6 +33,15 @@
     "rxjs": "^7.8.1",
     "uuid": "^13.0.0"
   },
+  "pkg": {
+    "scripts": "dist/**/*.js",
+    "assets": [
+      "dist/**/*",
+      "node_modules/@nestjs/**/*"
+    ],
+    "targets": ["node18-win-x64"],
+    "outputPath": "../dist"
+  },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
