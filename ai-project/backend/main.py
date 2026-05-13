@@ -132,6 +132,25 @@ async def upload_dataset(file: UploadFile = File(...)) -> DatasetUploadResponse:
     return DatasetUploadResponse(dataset_id=dataset_id)
 
 
+class LocalDatasetRequest(BaseModel):
+    path: str
+
+
+@app.post("/train/dataset/local", response_model=DatasetUploadResponse)
+def register_local_dataset(req: LocalDatasetRequest) -> DatasetUploadResponse:
+    """Register a zip that already exists on disk (no HTTP upload).
+
+    Use this for multi-GB datasets that would fail via the browser upload path.
+    """
+    try:
+        dataset_id = training.register_local_zip(req.path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return DatasetUploadResponse(dataset_id=dataset_id)
+
+
 @app.post("/train/start", response_model=TrainJobResponse)
 def train_start(req: TrainStartRequest) -> TrainJobResponse:
     try:

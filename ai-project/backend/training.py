@@ -17,6 +17,7 @@ yaml is generated automatically (single class "object").
 
 from __future__ import annotations
 
+import random
 import shutil
 import threading
 import uuid
@@ -28,6 +29,8 @@ from typing import Literal
 
 import yaml
 from ultralytics import YOLO
+
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 BASE_DIR = Path(__file__).resolve().parent
 DATASETS_DIR = BASE_DIR / "datasets"
@@ -87,6 +90,33 @@ def save_dataset_zip(file_bytes: bytes, original_name: str) -> str:
     return dataset_id
 
 
+def register_local_zip(zip_path: str | Path) -> str:
+    """Register a zip that already exists on disk — extract into datasets/<id>/.
+
+    Lets users skip HTTP upload for multi-GB archives.
+    """
+    src = Path(zip_path).expanduser()
+    if not src.is_absolute():
+        src = src.resolve()
+    if not src.exists():
+        raise FileNotFoundError(f"File not found: {src}")
+    if not src.is_file():
+        raise ValueError(f"Not a file: {src}")
+    if src.suffix.lower() != ".zip":
+        raise ValueError(f"Expected a .zip file, got: {src.suffix}")
+
+    dataset_id = uuid.uuid4().hex[:12]
+    target = DATASETS_DIR / dataset_id
+    target.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(src) as zf:
+        zf.extractall(target)
+
+    root = _resolve_dataset_root(target)
+    _ensure_data_yaml(root)
+    return dataset_id
+
+
 def _resolve_dataset_root(extracted_dir: Path) -> Path:
     """If the zip contained a single top-level folder, descend into it."""
     entries = [p for p in extracted_dir.iterdir() if not p.name.startswith("_")]
@@ -95,21 +125,93 @@ def _resolve_dataset_root(extracted_dir: Path) -> Path:
     return extracted_dir
 
 
+def _detect_per_class_folders(root: Path) -> list[Path] | None:
+    """Detect `<root>/<classname>/{img.jpg,img.txt}` layout (e.g. African Wildlife)."""
+    subdirs = [p for p in root.iterdir() if p.is_dir() and not p.name.startswith(("_", "."))]
+    if not subdirs or any(p.name in ("images", "labels") for p in subdirs):
+        return None
+    for sub in subdirs:
+        has_pair = any(
+            (sub / f"{img.stem}.txt").exists()
+            for img in sub.iterdir()
+            if img.suffix.lower() in IMG_EXTS
+        )
+        if not has_pair:
+            return None
+    return sorted(subdirs, key=lambda p: p.name.lower())
+
+
+def _reshape_per_class_to_yolo(root: Path, class_dirs: list[Path], val_split: float = 0.2) -> list[str]:
+    """Move per-class .jpg/.txt pairs into images/train|val + labels/train|val.
+
+    Returns the class names (used to fill `data.yaml`).
+    """
+    img_train = root / "images" / "train"
+    img_val = root / "images" / "val"
+    lbl_train = root / "labels" / "train"
+    lbl_val = root / "labels" / "val"
+    for d in (img_train, img_val, lbl_train, lbl_val):
+        d.mkdir(parents=True, exist_ok=True)
+
+    rng = random.Random(42)
+    class_names: list[str] = []
+    for cls_dir in class_dirs:
+        class_names.append(cls_dir.name)
+        pairs: list[tuple[Path, Path]] = []
+        for img in cls_dir.iterdir():
+            if img.suffix.lower() not in IMG_EXTS:
+                continue
+            lbl = cls_dir / f"{img.stem}.txt"
+            if lbl.exists():
+                pairs.append((img, lbl))
+
+        rng.shuffle(pairs)
+        cut = max(1, int(len(pairs) * (1.0 - val_split)))
+        for i, (img, lbl) in enumerate(pairs):
+            target_img = (img_train if i < cut else img_val) / f"{cls_dir.name}_{img.name}"
+            target_lbl = (lbl_train if i < cut else lbl_val) / f"{cls_dir.name}_{lbl.name}"
+            shutil.move(str(img), target_img)
+            shutil.move(str(lbl), target_lbl)
+
+        # remove empty per-class folder
+        try:
+            cls_dir.rmdir()
+        except OSError:
+            pass
+
+    return class_names
+
+
 def _ensure_data_yaml(root: Path) -> Path:
-    """Make sure data.yaml exists and uses absolute paths."""
+    """Make sure data.yaml exists and uses absolute paths.
+
+    If the dataset is in a per-class-folders layout (e.g. African Wildlife),
+    reshape it into the standard YOLO layout in-place.
+    """
     yaml_path = root / "data.yaml"
     if yaml_path.exists():
         cfg = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
-    else:
-        if not (root / "images" / "train").exists():
-            raise ValueError(
-                "Dataset must contain either data.yaml or images/train/ + labels/train/"
-            )
+    elif (root / "images" / "train").exists():
         cfg = {
             "train": "images/train",
             "val": "images/val" if (root / "images" / "val").exists() else "images/train",
             "names": ["object"],
             "nc": 1,
+        }
+    else:
+        class_dirs = _detect_per_class_folders(root)
+        if not class_dirs:
+            raise ValueError(
+                "Dataset must contain either data.yaml, "
+                "images/train/ + labels/train/, "
+                "or per-class subfolders with .jpg/.txt pairs"
+            )
+        names = _reshape_per_class_to_yolo(root, class_dirs)
+        cfg = {
+            "train": "images/train",
+            "val": "images/val",
+            "names": names,
+            "nc": len(names),
         }
 
     cfg["path"] = str(root.resolve())

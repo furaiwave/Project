@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
     Upload, Play, Loader2, CheckCircle2, AlertCircle, Download, Cpu, RotateCcw,
+    FolderOpen,
 } from 'lucide-react'
 
 import { Button } from './ui/button'
@@ -11,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from './ui/alert'
 import { Separator } from './ui/separator'
 
 import {
-    uploadDataset, startTraining, getJob, weightsUrl, activateModel,
+    uploadDataset, registerLocalDataset, startTraining, getJob, weightsUrl, activateModel,
     type TrainJob, type TrainStatus,
 } from '../api/training'
 
@@ -43,6 +44,8 @@ export const TrainingPanel: React.FC = () => {
     const [imgSize, setImgSize] = useState(640)
     const [baseModel, setBaseModel] = useState('yolov8n.pt')
     const [activated, setActivated] = useState(false)
+    const [mode, setMode] = useState<'upload' | 'local'>('upload')
+    const [localPath, setLocalPath] = useState('')
     const inputRef = useRef<HTMLInputElement>(null)
     const pollRef = useRef<number | null>(null)
 
@@ -86,6 +89,22 @@ export const TrainingPanel: React.FC = () => {
             setPhase({ kind: 'error', message: (err as Error).message })
         }
     }, [])
+
+    const handleLocalPath = useCallback(async () => {
+        const p = localPath.trim()
+        if (!p) {
+            setPhase({ kind: 'error', message: 'Введіть повний шлях до .zip файлу' })
+            return
+        }
+        const display = p.split(/[\\/]/).pop() || p
+        setPhase({ kind: 'uploading', progress: 100, fileName: display })
+        try {
+            const { dataset_id } = await registerLocalDataset(p)
+            setPhase({ kind: 'uploaded', datasetId: dataset_id, fileName: display })
+        } catch (err) {
+            setPhase({ kind: 'error', message: (err as Error).message })
+        }
+    }, [localPath])
 
     const handleStart = useCallback(async () => {
         if (phase.kind !== 'uploaded') return
@@ -140,18 +159,71 @@ export const TrainingPanel: React.FC = () => {
                     <p className="text-xs font-medium">1. Датасет (.zip у форматі YOLO)</p>
 
                     {phase.kind === 'idle' || phase.kind === 'error' ? (
-                        <div
-                            onClick={() => inputRef.current?.click()}
-                            className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 text-center cursor-pointer transition-colors hover:border-muted-foreground/50 hover:bg-muted/50"
-                        >
-                            <div className="rounded-full bg-muted p-2">
-                                <Upload className="h-5 w-5 text-muted-foreground" />
+                        <>
+                            <div className="inline-flex rounded-md border border-border bg-background p-0.5 mb-2">
+                                <Button
+                                    size="sm"
+                                    variant={mode === 'upload' ? 'secondary' : 'ghost'}
+                                    onClick={() => setMode('upload')}
+                                    className="gap-1.5"
+                                >
+                                    <Upload className="h-3.5 w-3.5" />
+                                    Завантажити
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant={mode === 'local' ? 'secondary' : 'ghost'}
+                                    onClick={() => setMode('local')}
+                                    className="gap-1.5"
+                                >
+                                    <FolderOpen className="h-3.5 w-3.5" />
+                                    Локальний шлях
+                                </Button>
                             </div>
-                            <p className="text-sm font-medium">Завантажити архів</p>
-                            <p className="text-xs text-muted-foreground">
-                                images/train, labels/train, data.yaml
-                            </p>
-                        </div>
+
+                            {mode === 'upload' ? (
+                                <div
+                                    onClick={() => inputRef.current?.click()}
+                                    className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 text-center cursor-pointer transition-colors hover:border-muted-foreground/50 hover:bg-muted/50"
+                                >
+                                    <div className="rounded-full bg-muted p-2">
+                                        <Upload className="h-5 w-5 text-muted-foreground" />
+                                    </div>
+                                    <p className="text-sm font-medium">Завантажити архів</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Підходить для архівів &lt; 500 MB
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2 rounded-lg border border-muted-foreground/25 p-4">
+                                    <label className="space-y-1 block">
+                                        <span className="text-xs text-muted-foreground">
+                                            Повний шлях до .zip файлу на цьому ПК
+                                        </span>
+                                        <input
+                                            type="text"
+                                            value={localPath}
+                                            onChange={(e) => setLocalPath(e.target.value)}
+                                            placeholder="C:\Users\...\dataset.zip"
+                                            className="w-full h-8 rounded-none border border-input bg-background px-2 text-xs font-mono"
+                                        />
+                                    </label>
+                                    <Button
+                                        size="sm"
+                                        onClick={handleLocalPath}
+                                        disabled={!localPath.trim()}
+                                        className="gap-2"
+                                    >
+                                        <FolderOpen className="h-3.5 w-3.5" />
+                                        Зареєструвати локальний файл
+                                    </Button>
+                                    <p className="text-xs text-muted-foreground">
+                                        Для архівів &gt; 500 MB. Файл лишиться на місці, бекенд лише
+                                        розпакує його в datasets/.
+                                    </p>
+                                </div>
+                            )}
+                        </>
                     ) : (
                         <div className="space-y-1.5">
                             <div className="flex items-center justify-between text-xs">

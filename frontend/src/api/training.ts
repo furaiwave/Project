@@ -1,4 +1,6 @@
-const PY = import.meta.env.VITE_PY_URL ?? 'http://127.0.0.1:8000'
+// Empty by default — uses Vite proxy from same origin (no CORS).
+// Set VITE_PY_URL only if running the frontend without a dev proxy.
+const PY = import.meta.env.VITE_PY_URL ?? ''
 
 export type TrainStatus = 'queued' | 'running' | 'completed' | 'failed'
 
@@ -40,6 +42,13 @@ const json = async <T>(res: Response): Promise<T> => {
     }
     return res.json() as Promise<T>
 }
+
+export const registerLocalDataset = async (path: string): Promise<UploadDatasetResult> =>
+    json<UploadDatasetResult>(await fetch(`${PY}/train/dataset/local`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+    }))
 
 export const uploadDataset = async (
     file: File,
