@@ -21,6 +21,10 @@ venv/
 *.pt
 *.onnx
 
+# Training artefacts
+ai-project/backend/datasets/
+ai-project/backend/runs/
+
 # Build output
 build/
 out/

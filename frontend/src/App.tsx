@@ -1,5 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Upload, RotateCcw, Cpu, Clock, Target, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import {
+  Upload, RotateCcw, Cpu, Clock, Target, AlertCircle, CheckCircle2, Loader2,
+  Eye, GraduationCap,
+} from 'lucide-react';
 
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
@@ -10,8 +13,11 @@ import { Separator } from './components/ui/separator';
 import { ScrollArea } from './components/ui/scroll-area';
 
 import { BoundingBoxCanvas } from './components/CoundingBoxCanvas';
+import { TrainingPanel } from './components/TrainingPanel';
 import { useDetection } from './hooks/useDetection';
 import { isSuccess, isUploadDone, type DetectionErrorCode } from './types/detection';
+
+type View = 'detect' | 'train';
 
 //  Error messages 
 const ERROR_MESSAGES: Record<DetectionErrorCode, string> = {
@@ -36,6 +42,7 @@ const App: React.FC = () => {
   const { state, run, reset, preview } = useDetection();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [view, setView] = useState<View>('detect');
 
   const isBusy = state.phase === 'uploading' || state.phase === 'processing';
   const done   = isUploadDone(state) && isSuccess(state.result) ? state.result : null;
@@ -63,25 +70,52 @@ const App: React.FC = () => {
       <div className="mx-auto max-w-6xl space-y-6">
 
         {/*  Header  */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Object Detection</h1>
             <p className="text-sm text-muted-foreground">YOLOv8 · NestJS · FastAPI</p>
           </div>
-          <Badge
-            variant={
-              state.phase === 'done'  ? 'default'     :
-              state.phase === 'error' ? 'destructive' : 'secondary'
-            }
-            className="gap-1.5"
-          >
-            {isBusy                  && <Loader2      className="h-3 w-3 animate-spin" />}
-            {state.phase === 'done'  && <CheckCircle2 className="h-3 w-3" />}
-            {state.phase === 'error' && <AlertCircle  className="h-3 w-3" />}
-            {{ idle: 'Очікування', uploading: 'Завантаження', processing: 'Обробка', done: 'Готово', error: 'Помилка' }[state.phase]}
-          </Badge>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex rounded-md border border-border bg-background p-0.5">
+              <Button
+                size="sm"
+                variant={view === 'detect' ? 'secondary' : 'ghost'}
+                onClick={() => setView('detect')}
+                className="gap-1.5"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Розпізнавання
+              </Button>
+              <Button
+                size="sm"
+                variant={view === 'train' ? 'secondary' : 'ghost'}
+                onClick={() => setView('train')}
+                className="gap-1.5"
+              >
+                <GraduationCap className="h-3.5 w-3.5" />
+                Тренування
+              </Button>
+            </div>
+            {view === 'detect' && (
+              <Badge
+                variant={
+                  state.phase === 'done'  ? 'default'     :
+                  state.phase === 'error' ? 'destructive' : 'secondary'
+                }
+                className="gap-1.5"
+              >
+                {isBusy                  && <Loader2      className="h-3 w-3 animate-spin" />}
+                {state.phase === 'done'  && <CheckCircle2 className="h-3 w-3" />}
+                {state.phase === 'error' && <AlertCircle  className="h-3 w-3" />}
+                {{ idle: 'Очікування', uploading: 'Завантаження', processing: 'Обробка', done: 'Готово', error: 'Помилка' }[state.phase]}
+              </Badge>
+            )}
+          </div>
         </div>
 
+        {view === 'train' && <TrainingPanel />}
+
+        {view === 'detect' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
           {/*  Left col: image  */}
@@ -258,6 +292,7 @@ const App: React.FC = () => {
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
